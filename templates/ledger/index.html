@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}跨日账本{% endblock %}
+{% block body %}
+<section class="card ledger-hero">
+  <div>
+    <h1>跨日账本 · 开跑门闩</h1>
+    <p class="muted">
+      后台日期 <b>{{ summary.today }}</b> · 清账必须从最旧的一天顺序清到昨天，不许跳日；
+      更早未了未清完，今日不许开跑。
+    </p>
+  </div>
+  <form method="post" action="{{ url_for('ledger.rollover') }}">
+    <button type="submit" class="secondary">跨日封账（在途日册转历史并挂未了）</button>
+  </form>
+</section>
+
+<!-- ① 今日开跑门闩 -->
+<section class="card" id="run-gate">
+  <h2>① 今日开跑（今日新收）</h2>
+  {% if running_task %}
+  <p class="banner error">
+    清账任务 #{{ running_task.id }}（{{ running_task.target_day }}）还在跑：
+    不能开另一日清账，也不能开今日新收。
+  </p>
+  {% endif %}
+  {% if summary.pending_total > 0 %}
+  <p class="banner error">
+    还有 {{ summary.pending_total }} 条跨日未了未清（最旧
+    {{ summary.pending_days[0].day }}）。今日开跑会以「跳日」失败，先按顺序清账。
+  </p>
+  {% endif %}
+  <form class="grid-form" method="post" action="{{ url_for('ledger.collect') }}">
+    <label>种子路径
+      <select name="seed_path" required>
+        {% for s in seeds %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit"
+      {% if running_task or summary.pending_total > 0 %}class="danger"{% endif %}>
+      今日开跑新收
+    </button>
+  </form>
+  <p class="muted">
+    门闩规则：清账任务 running 中 → 拦「清账未完成」；存在更早日期未了 → 拦「跳日」。
+    今日新收只写今日账册，绝不写进历史日册。
+  </p>
+</section>
+
+<!-- ② 清账口径（选定写死） -->
+<section class="card" id="policy">
+  <h2>② 清账口径（选定后不能改口）</h2>
+  {% if summary.policy_method %}
+  <p class="banner ok">页眉已写死口径：<b>{{ summary.policy_label }}</b>。
+    发起清账时方式对不上会被当场拦住，卡片写「方式不对」。</p>
+  {% else %}
+  <p class="muted">尚未锁定。第一次发起清账时会自动锁定所选口径；也可在此先锁定。</p>
+  <form class="grid-form" method="post" action="{{ url_for('ledger.lock_policy') }}">
+    <label>清账方式
+      <select name="method" required>
+        {% for m in methods %}<option value="{{ m }}">{{ method_labels[m] }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">锁定口径</button>
+  </form>
+  {% endif %}
+  <ul class="muted">
+    <li><b>merge_today</b>：清未了时并入今日账册，并保留来源日期字段（source_day）。</li>
+    <li><b>separate_task</b>：为每一天生成独立清账任务写入独立清账册，今日账册保持空白直到清完。</li>
+  </ul>
+</section>
+
+<!-- ③ 跨日未了（按来源日，最旧在前） -->
+<section class="card" id="pending">
+  <h2>③ 跨日未了（清账顺序：最旧 → 昨天）</h2>
+  {% for day, items in pending_groups.items() %}
+  <div class="pending-group {% if loop.first %}oldest-group{% endif %}" id="pending-{{ day }}">
+    <h3>
+      来源日 {{ day }} · {{ items|length }} 条
+      {% if loop.first and pending_groups|length > 1 %}
+      <span class="tag oldest-tag">最旧，必须先清</span>
+      {% endif %}
+    </h3>
+    <table>
+      <thead><tr><th>item_key</th><th>标题</th><th>来源日期</th><th>状态</th></tr></thead>
+      <tbody>
+        {% for p in items %}
+        <tr>
+          <td><code>{{ p.item_key }}</code></td>
+          <td>{{ p.title }}</td>
+          <td>{{ p.source_day }}</td>
+          <td><span class="tag {{ p.status }}">{{ p.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form class="inline-form" method="post" action="{{ url_for('ledger.start_settlement') }}">
+      <input type="hidden" name="target_day" value="{{ day }}" />
+      <label class="inline">方式
+        <select name="method" required>
+          {% for m in methods %}
+          <option value="{{ m }}" {% if summary.policy_method == m %}selected{% endif %}>
+            {{ method_labels[m] }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit"
+        {% if not loop.first or running_task %}class="danger"{% endif %}>
+        发起 {{ day }} 清账
+      </button>
+      {% if not loop.first %}<span class="muted">（更旧未了未清，点了会以「跳日」失败）</span>{% endif %}
+    </form>
+  </div>
+  {% else %}
+  <p class="muted">没有跨日未了，今日可正常开跑。</p>
+  {% endfor %}
+</section>
+
+<!-- ④ 清账任务卡（含失败留痕） -->
+<section class="card" id="tasks">
+  <h2>④ 清账任务</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>目标日</th><th>口径</th><th>状态</th><th>失败原因</th><th>创建</th><th>完成</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td>{{ t.id }}</td>
+        <td>{{ t.target_day }}</td>
+        <td>{{ method_labels[t.method] }}</td>
+        <td><span class="tag task-{{ t.status }}">{{ t.status }}</span></td>
+        <td>
+          {% if t.fail_reason %}<b class="reason">{{ t.fail_reason }}</b>{% else %}—{% endif %}
+        </td>
+        <td class="muted">{{ t.created_at }}</td>
+        <td class="muted">{{ t.finished_at or '—' }}</td>
+        <td>
+          {% if t.status == 'running' %}
+          <form method="post" action="{{ url_for('ledger.complete_settlement', task_id=t.id) }}">
+            <button type="submit">执行并完结</button>
+          </form>
+          {% else %}
+          <a href="{{ url_for('ledger.day_detail', day=summary.today) }}">查账册</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="muted">尚无清账任务</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<!-- ⑤ 今日开跑尝试留痕 -->
+<section class="card" id="attempts">
+  <h2>⑤ 今日开跑尝试（门闩留痕）</h2>
+  <table>
+    <thead><tr><th>ID</th><th>种子</th><th>结果</th><th>原因</th><th>入账</th><th>去重</th><th>时间</th></tr></thead>
+    <tbody>
+      {% for a in attempts %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td><code>{{ a.seed_path }}</code></td>
+        <td><span class="tag attempt-{{ a.result }}">{{ a.result }}</span></td>
+        <td>{% if a.reason %}<b class="reason">{{ a.reason }}</b>{% else %}—{% endif %}</td>
+        <td>{{ a.inserted }}</td>
+        <td>{{ a.skipped_dup }}</td>
+        <td class="muted">{{ a.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">尚无开跑尝试</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<!-- ⑥ 日册列表（历史只读） -->
+<section class="card" id="ledgers">
+  <h2>⑥ 日册（历史日册题名只读，切换天只能翻看）</h2>
+  <table>
+    <thead><tr><th>日期</th><th>题名（只读）</th><th>状态</th><th>条目数</th><th></th></tr></thead>
+    <tbody>
+      {% for l in ledgers %}
+      <tr>
+        <td>{{ l.day }}</td>
+        <td>{{ l.title }}</td>
+        <td><span class="tag ledger-{{ l.status }}">{{ l.status }}</span></td>
+        <td>{{ ledger_counts.get(l.day, 0) }}</td>
+        <td><a href="{{ url_for('ledger.day_detail', day=l.day) }}">翻看</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">尚无日册</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

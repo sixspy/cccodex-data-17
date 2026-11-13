@@ -11,6 +11,41 @@
   <header class="topbar">
     <strong>Crawl Lab</strong>
     <span class="muted">数据工程基线 · 采集任务编排</span>
+    {% if session.get('user') and ledger_header %}
+    <nav class="topnav">
+      <a href="{{ url_for('ledger.index') }}">跨日账本</a>
+      <a href="{{ url_for('jobs.list_jobs') }}">采集任务</a>
+    </nav>
+    <section class="ledger-header" aria-label="跨日账本页眉">
+      <div class="hcell hcell-today">
+        <span class="hlabel">后台今日</span>
+        <a href="{{ url_for('ledger.day_detail', day=ledger_header.today) }}"
+           >{{ ledger_header.today }}</a>
+      </div>
+      <div class="hcell">
+        <span class="hlabel">今日已收</span>
+        <span class="hnum">{{ ledger_header.today_collected }}</span>
+      </div>
+      <div class="hcell hcell-pending">
+        <span class="hlabel">跨日未了（共 {{ ledger_header.pending_total }}）</span>
+        <span class="hdays">
+          {% for d in ledger_header.pending_days %}
+          <a class="day-chip {% if loop.first %}oldest{% endif %}"
+             href="{{ url_for('ledger.index') }}#pending-{{ d.day }}"
+             title="{{ d.day }} 未了 {{ d.count }} 条{% if loop.first %}（最旧，必须先清）{% endif %}">
+            {{ d.day }}<b>{{ d.count }}</b>
+          </a>
+          {% else %}
+          <span class="muted">无</span>
+          {% endfor %}
+        </span>
+      </div>
+      <div class="hcell hcell-policy">
+        <span class="hlabel">当前口径</span>
+        <span class="hval">{{ ledger_header.policy_label }}</span>
+      </div>
+    </section>
+    {% endif %}
     {% if session.get('user') %}
     <form class="logout" method="post" action="{{ url_for('auth.logout') }}">
       <span>{{ session.user }}</span>

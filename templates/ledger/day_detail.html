@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ ledger_row.day }} 日册{% endblock %}
+{% block body %}
+<p><a href="{{ url_for('ledger.index') }}">← 返回跨日账本</a></p>
+<section class="card">
+  <h1>{{ ledger_row.title }}</h1>
+  <p class="muted">
+    日期 {{ ledger_row.day }} · 状态
+    <span class="tag ledger-{{ ledger_row.status }}">{{ ledger_row.status }}</span>
+    {% if is_historical %}
+    · <b>历史日册：题名与条目只读，切换天只能翻看，不能改</b>
+    {% else %}
+    · 今日账册（今日新收与并入的清账条目落这里）
+    {% endif %}
+  </p>
+  {% if is_historical %}
+  <p class="banner error">历史日册题名只读，页面不提供任何改名或写入入口。</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>账册条目（{{ entries|length }}）</h2>
+  <table>
+    <thead>
+      <tr><th>item_key</th><th>标题</th><th>来源日期 source_day</th><th>条目类型</th><th>入账时间</th></tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td><code>{{ e.item_key }}</code></td>
+        <td>{{ e.title }}</td>
+        <td>{{ e.source_day }}</td>
+        <td><span class="tag entry-{{ e.entry_kind }}">{{ e.entry_kind }}</span></td>
+        <td class="muted">{{ e.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">
+        {% if is_historical %}该历史日册条目已在封账时挂为未了。{% else %}今日账册暂空。{% endif %}
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">
+    entry_kind = <code>new</code> 表示今日新收；<code>merged</code> 表示按 merge_today
+    口径从历史日期并入，来源日期字段保留不变。
+  </p>
+</section>
+{% endblock %}

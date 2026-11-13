@@ -20,11 +20,23 @@ def create_app(config_class=Config):
 
     from app.routes.auth import bp as auth_bp
     from app.routes.jobs import bp as jobs_bp
+    from app.routes.ledger_routes import bp as ledger_bp
     from app.routes.mock import bp as mock_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(jobs_bp)
+    app.register_blueprint(ledger_bp)
     app.register_blueprint(mock_bp)
+
+    from app.services.ledger import header_summary
+
+    @app.context_processor
+    def inject_ledger_header():
+        # 登录页与静态资源不连库；其余页面统一注入跨日账本页眉
+        try:
+            return {"ledger_header": header_summary()}
+        except Exception:
+            return {"ledger_header": None}
 
     init_db(app)
     return app
